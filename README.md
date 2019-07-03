@@ -1,1 +1,1 @@
-# Beaglebone_Black
+# BeagleboneBlack
