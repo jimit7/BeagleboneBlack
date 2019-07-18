@@ -144,7 +144,19 @@ public:
    	 return 0;
 	}
  //threaded invert output every X ms.
-	virtual int toggleOutput(int numberOfTimes, int time);
+	virtual int toggleOutput(int numberOfTimes, int time){
+	this->setDirection(OUTPUT);
+	this->toggleNumber = numberOfTimes;
+	this->togglePeriod = time;
+	this->threadRunning = true;
+    if(pthread_create(&this->thread, NULL, &threadedToggle, static_cast<void*>(this))){
+    	perror("GPIO: Failed to create the toggle thread");
+    	this->threadRunning = false;
+    	return -1;
+    }
+    return 0;
+}
+
 	virtual void changeToggleTime(int time) { this->togglePeriod = time; }
 	virtual void toggleCancel() { this->threadRunning = false; }
 
@@ -169,8 +181,56 @@ public:
 	else if (input == "both") return BOTH;
 	else return NONE;
 	}
-	virtual int waitForEdge(); // waits until button is pressed
-	virtual int waitForEdge(CallbackType callback); // threaded with callback
+	virtual int waitForEdge(){
+	this->setDirection(INPUT); // must be an input pin to poll its value
+	int fd, i, epollfd, count=0;
+	struct epoll_event ev;
+	epollfd = epoll_create(1);
+    if (epollfd == -1) {
+	   perror("GPIO: Failed to create epollfd");
+	   return -1;
+    }
+    if ((fd = open((this->path + "value").c_str(), O_RDONLY | O_NONBLOCK)) == -1) {
+       perror("GPIO: Failed to open file");
+       return -1;
+    }
+
+    //ev.events = read operation | edge triggered | urgent data
+    ev.events = EPOLLIN | EPOLLET | EPOLLPRI;
+    ev.data.fd = fd;  // attach the file file descriptor
+
+    //Register the file descriptor on the epoll instance, see: man epoll_ctl
+    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &ev) == -1) {
+       perror("GPIO: Failed to add control interface");
+       return -1;
+    }
+	while(count<=1){  // ignore the first trigger
+		i = epoll_wait(epollfd, &ev, 1, -1);
+		if (i==-1){
+			perror("GPIO: Poll Wait fail");
+			count=5; // terminate loop
+		}
+		else {
+			count++; // count the triggers up
+		}
+	}
+    close(fd);
+    if (count==5) return -1;
+	return 0;
+} // waits until button is pressed
+	virtual int waitForEdge(CallbackType callback){
+	this->threadRunning = true;
+	this->callbackFunction = callback;
+    // create the thread, pass the reference, address of the function and data
+    if(pthread_create(&this->thread, NULL, &threadedPoll, static_cast<void*>(this))){
+    	perror("GPIO: Failed to create the poll thread");
+    	this->threadRunning = false;
+    	return -1;
+    }
+    return 0;
+}
+
+		// threaded with callback
 	virtual void waitForEdgeCancel() { this->threadRunning = false; }
 
 	virtual ~GPIO();  //destructor will unexport the pin
@@ -191,9 +251,31 @@ private:
 	friend void* threadedToggle(void *value);
 };
 
-void* threadedPoll(void *value);
-void* threadedToggle(void *value);
-
+void* threadedPoll(void *value){
+	GPIO *gpio = static_cast<GPIO*>(value);
+	while(gpio->threadRunning){
+		gpio->callbackFunction(gpio->waitForEdge());
+		usleep(gpio->debounceTime * 1000);
+	}
+	return 0;
+}
+	
+void* threadedToggle(void *value){
+	GPIO *gpio = static_cast<GPIO*>(value);
+	bool isHigh = (bool) gpio->getValue(); //find current value
+	while(gpio->threadRunning){
+		if (isHigh)	gpio->setValue(HIGH);
+		else gpio->setValue(LOW);
+		usleep(gpio->togglePeriod * 500);
+		isHigh=!isHigh;
+		if(gpio->toggleNumber>0) gpio->toggleNumber--;
+		if(gpio->toggleNumber==0) gpio->threadRunning=false;
+	}
+	return 0;
+}
+GPIO::~GPIO() {
+//	this->unexportGPIO();
+}
 } /* namespace exploringBB */
 
 #endif /* GPIO_H_ */
