@@ -276,4 +276,4 @@ GPIO::~GPIO() {
 //	this->unexportGPIO();
 }
 
-} /* namespace exploringBB __  */
+} /* __ namespace exploringBB __  */
