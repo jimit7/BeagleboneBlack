@@ -211,7 +211,7 @@ void* threadedToggle(void *value){
 	return 0;
 }
 
-// Blocking Poll - based on the epoll socket code in the epoll man page
+// Blocking Poll --- based on the epoll socket code in the epoll man page
 int GPIO::waitForEdge(){
 	this->setDirection(INPUT); // must be an input pin to poll its value
 	int fd, i, epollfd, count=0;
