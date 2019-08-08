@@ -3,7 +3,7 @@
 #include <linux/i2c-dev.h>
 #include <sys/ioctl.h>
 #include <fcntl.h>
-
+//Accerlerometer with I2C
 void main() 
 {
 	// Create I2C bus
